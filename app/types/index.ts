@@ -12,4 +12,11 @@ export type PlatformContent = {
 export type PromptTemplate = {
   platform: Platform;
   prompt: string;
+};
+
+export type PromptHistory = {
+  prompt: string;
+  timestamp: number;
+  platform: Platform;
+  success: boolean;
 }; 

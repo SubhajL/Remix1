@@ -2,9 +2,14 @@
 
 import React, { useState, ChangeEvent } from 'react'
 import { Platform, PlatformContent, GeneratedContent as GeneratedContentType } from '../types'
-import GeneratedContentComponent from './GeneratedContentComponent'
+import { PLATFORM_PROMPTS } from '../lib/openai'
+import GeneratedContent from './GeneratedContent'
 import LoadingSpinner from './LoadingSpinner'
 import ErrorMessage from './ErrorMessage'
+
+interface PlatformPrompts {
+  [key: string]: string;
+}
 
 export default function CreateForm() {
   const [content, setContent] = useState('')
@@ -12,6 +17,7 @@ export default function CreateForm() {
   const [generatedContent, setGeneratedContent] = useState<PlatformContent>({})
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [platformPrompts, setPlatformPrompts] = useState<PlatformPrompts>({})
 
   const handleContentChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     setContent(e.target.value)
@@ -26,39 +32,101 @@ export default function CreateForm() {
   }
 
   const generateContent = async (platform: Platform, customPrompt?: string) => {
+    const startTime = Date.now()
+    console.log(`[${platform}] Starting content generation`, {
+      contentLength: content.length,
+      customPrompt: !!customPrompt,
+      timestamp: new Date().toISOString()
+    })
+
     try {
       setError(null)
+      const requestBody = {
+        content,
+        platform,
+        customPrompt
+      }
+      
+      console.log(`[${platform}] Making API request`, {
+        body: requestBody,
+        timestamp: new Date().toISOString()
+      })
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content,
-          platform,
-          customPrompt
-        }),
+        body: JSON.stringify(requestBody),
       })
 
-      if (!response.ok) throw new Error('Failed to generate content')
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error(`[${platform}] API error`, {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          timestamp: new Date().toISOString()
+        })
+        throw new Error(`Failed to generate content: ${response.statusText}`)
+      }
 
       const result: GeneratedContentType = await response.json()
+      console.log(`[${platform}] Content generated successfully`, {
+        resultLength: result.content.length,
+        hashtagCount: result.hashtags.length,
+        duration: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      })
+
+      // Store the prompt used for this generation
+      setPlatformPrompts(prev => ({
+        ...prev,
+        [platform]: customPrompt || PLATFORM_PROMPTS[platform]
+      }))
+
       setGeneratedContent(prev => ({
         ...prev,
         [platform]: result
       }))
     } catch (error) {
-      console.error('Error:', error)
+      console.error(`[${platform}] Generation error`, {
+        error,
+        duration: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      })
       setError(error instanceof Error ? error.message : 'Failed to generate content')
     }
   }
 
   const handleGenerate = async () => {
+    const startTime = Date.now()
+    console.log('Starting batch content generation', {
+      platforms: selectedPlatforms,
+      contentLength: content.length,
+      timestamp: new Date().toISOString()
+    })
+
     setIsGenerating(true)
     try {
       await Promise.all(selectedPlatforms.map(platform => generateContent(platform)))
+      
+      console.log('Batch generation completed', {
+        duration: Date.now() - startTime,
+        timestamp: new Date().toISOString()
+      })
     } finally {
       setIsGenerating(false)
     }
   }
+
+  const handleContentSave = async (platform: Platform, newContent: string) => {
+    setGeneratedContent(prev => ({
+      ...prev,
+      [platform]: {
+        ...prev[platform]!,
+        content: newContent
+      }
+    }));
+  };
 
   return (
     <div className="grid grid-cols-2 gap-6">
@@ -116,11 +184,13 @@ export default function CreateForm() {
       <div className="space-y-6">
         {isGenerating && <LoadingSpinner />}
         {Object.entries(generatedContent).map(([platform, content]) => (
-          <GeneratedContentComponent
+          <GeneratedContent
             key={platform}
             platform={platform as Platform}
             content={content}
+            prompt={platformPrompts[platform]}
             onPromptEdit={generateContent}
+            onContentSave={handleContentSave}
           />
         ))}
       </div>

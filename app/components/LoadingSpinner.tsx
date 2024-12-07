@@ -1,7 +1,17 @@
-export default function LoadingSpinner() {
+interface Props {
+  size?: 'sm' | 'md' | 'lg'
+}
+
+export default function LoadingSpinner({ size = 'md' }: Props) {
+  const sizeClass = {
+    sm: 'spinner-sm',
+    md: '',
+    lg: 'spinner-lg'
+  }[size];
+
   return (
     <div className="flex items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
+      <div className={`spinner ${sizeClass}`} />
     </div>
-  )
+  );
 } 
